@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96" role="img" aria-label="prmap">
+  <!-- Three "lines" (file roles) running through shared "stations" (symbols). -->
+  <path d="M12 72 L36 36 L60 56 L84 20" fill="none" stroke="#2F5BD3" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M12 36 L36 36" fill="none" stroke="#8A3FB8" stroke-width="9" stroke-linecap="round"/>
+  <path d="M60 56 L60 84" fill="none" stroke="#D9480F" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="36" cy="36" r="9" fill="#FFFFFF" stroke="#8A93A1" stroke-width="5"/>
+  <circle cx="60" cy="56" r="9" fill="#FFFFFF" stroke="#8A93A1" stroke-width="5"/>
+</svg>

@@ -1,0 +1,40 @@
+# --- Python -------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# --- Frontend -----------------------------------------------------------
+node_modules/
+*.tsbuildinfo
+frontend/dist/
+npm-debug.log*
+yarn-error.log*
+
+# Built UI. `make build` writes it into the Python package so `prmap` can
+# serve it; it is generated, so it is not committed.
+backend/src/prmap/static/
+
+# --- prmap runtime ------------------------------------------------------
+# Parse cache (normally ~/.cache/prmap, but PRMAP_CACHE_DIR may point here)
+*.sqlite
+*.sqlite-journal
+
+# --- Editors, OS, local tooling ----------------------------------------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+.claude/
+.env
+.env.*
+!.env.example
