@@ -29,6 +29,8 @@ class OpenReview(BaseModel):
     base: str | None = None
     head: str | None = None
     mode: Literal["merge-base", "direct"] = "merge-base"
+    uncommitted: bool = False
+    untracked: bool = False
 
 
 class GraphOptions(BaseModel):
@@ -72,6 +74,7 @@ def create_app(repo_path: str | Path) -> FastAPI:
             "root": str(repo.root),
             "name": repo.root.name,
             "current_branch": repo.current_branch(),
+            "uncommitted": dict(zip(("tracked", "untracked"), repo.uncommitted_counts())),
             "default_branch": repo.default_branch(),
             "branches": repo.branches(),
             "gh_available": github.gh_available(),
@@ -96,7 +99,7 @@ def create_app(repo_path: str | Path) -> FastAPI:
         else:
             if not body.base or not body.head:
                 raise HTTPException(400, "Choose both a base and a head branch")
-            review = manager.open_branches(body.base, body.head, body.mode)
+            review = manager.open_branches(body.base, body.head, body.mode, body.uncommitted, body.untracked)
         return review.summary()
 
     @app.get("/api/reviews/{review_id}")

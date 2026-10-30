@@ -25,6 +25,7 @@ export interface RepoInfo {
   root: string;
   name: string;
   current_branch: string | null;
+  uncommitted: { tracked: number; untracked: number };
   default_branch: string | null;
   branches: Branch[];
   gh_available: boolean;
@@ -67,6 +68,7 @@ export interface Review {
   head_sha: string;
   diff_base: string;
   commits: number;
+  uncommitted: boolean;
   pr: {
     number: number;
     url: string;
@@ -82,7 +84,14 @@ export interface Review {
 
 export type ReviewRequest =
   | { source: "pr"; pr: string }
-  | { source: "branches"; base: string; head: string; mode?: "merge-base" | "direct" };
+  | {
+      source: "branches";
+      base: string;
+      head: string;
+      mode?: "merge-base" | "direct";
+      uncommitted?: boolean;
+      untracked?: boolean;
+    };
 
 export interface IndexStatus {
   state: "pending" | "building" | "ready" | "error";

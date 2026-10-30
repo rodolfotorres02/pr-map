@@ -321,7 +321,20 @@ export function ReviewScreen({ repo, review, onClose, theme }: Props) {
         )}
       </aside>
       <main className="stage">
-        {view === "diff" ? (
+        {view === "diff" && review.files.length === 0 ? (
+          <div className="stage-message">
+            <p>
+              No files changed between <code>{review.base_label}</code> and <code>{review.head_label}</code>.
+            </p>
+            <p className="muted">
+              {review.base_sha === review.head_sha
+                ? `Both point to commit ${review.head_sha.slice(0, 9)}.`
+                : review.diff_base === review.head_sha
+                  ? `Every commit on ${review.head_label} is already in ${review.base_label}.`
+                  : "Their commits add up to no file changes."}
+            </p>
+          </div>
+        ) : view === "diff" ? (
           <DiffView
             detail={detail && detail.file.path === selectedPath ? detail : null}
             error={detailError}

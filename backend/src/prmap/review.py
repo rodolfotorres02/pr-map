@@ -53,6 +53,8 @@ class Review:
     job: IndexJob
     pr: dict | None = None
     commits: int = 0
+    # head_sha is a snapshot of the working tree on top of the head branch
+    uncommitted: bool = False
     _changes: dict[str, dict] | None = None
     # path -> (base blob sha, base mode); filled from `git diff --raw` when the review opens
     _base_blobs: dict[str, tuple[str | None, str | None]] = field(default_factory=dict, repr=False)
@@ -71,6 +73,7 @@ class Review:
             "head_sha": self.head_sha,
             "diff_base": self.diff_base,
             "commits": self.commits,
+            "uncommitted": self.uncommitted,
             "pr": self.pr,
             "files": self.files,
             "stats": {
@@ -147,17 +150,53 @@ class ReviewManager:
 
     # -- opening reviews ----------------------------------------------------
 
-    def open_branches(self, base: str, head: str, mode: str = "merge-base") -> Review:
+    def open_branches(
+        self, base: str, head: str, mode: str = "merge-base", uncommitted: bool = False, untracked: bool = False
+    ) -> Review:
         try:
             base_sha = self.repo.rev_parse(base)
             head_sha = self.repo.rev_parse(head)
+            checked_out = head_sha == self.repo.rev_parse("HEAD")
         except GitError as exc:
             raise ReviewError(f"Unknown branch or commit: {exc}") from exc
         if not base_sha or not head_sha:
             raise ReviewError(f"Unknown branch or commit: {base if not base_sha else head}")
+        snapshot = False
+        if uncommitted:
+            if not checked_out:
+                raise ReviewError(f"Uncommitted changes can only be included when '{head}' is checked out.")
+            try:
+                tip = self.repo.snapshot_worktree(untracked)
+            except GitError as exc:
+                raise ReviewError(f"Couldn't read your uncommitted changes: {exc}") from exc
+            snapshot, head_sha = tip != head_sha, tip
         diff_base = self.repo.merge_base(base_sha, head_sha) if mode == "merge-base" else base_sha
-        title = f"{head} → {base}"
-        return self._create("branches", title, base, head, base_sha, head_sha, diff_base, None)
+        if diff_base == head_sha:
+            raise ReviewError(
+                self._nothing_to_compare(base, head, base_sha, head_sha, checked_out, uncommitted, untracked)
+            )
+        title = f"{head} + uncommitted → {base}" if snapshot else f"{head} → {base}"
+        return self._create("branches", title, base, head, base_sha, head_sha, diff_base, None, snapshot)
+
+    def _nothing_to_compare(
+        self, base: str, head: str, base_sha: str, head_sha: str, checked_out: bool, uncommitted: bool, untracked: bool
+    ) -> str:
+        if base_sha == head_sha:
+            message = f"Nothing to compare: '{head}' and '{base}' point to the same commit ({head_sha[:9]})."
+        else:
+            message = (
+                f"Nothing to compare: every commit on '{head}' is already in '{base}'. "
+                f"Swap base and head to review what '{base}' adds."
+            )
+        changed, new = self.repo.uncommitted_counts() if checked_out else (0, 0)
+        if not uncommitted and (changed or new):
+            # The usual cause: a branch was just created and its work isn't committed yet.
+            message += " Your uncommitted changes aren't included: tick “Include uncommitted changes” to review them."
+        elif uncommitted and not untracked and new:
+            message += " Only untracked files changed: tick “Also include untracked files” to review them."
+        elif uncommitted:
+            message += " There are no uncommitted changes either."
+        return message
 
     def open_pr(self, pr_input: str) -> Review:
         try:
@@ -185,7 +224,9 @@ class ReviewManager:
             "pr", pr["title"], pr["baseRefName"], pr["headRefName"], base_sha, head_sha, diff_base, meta
         )
 
-    def _create(self, kind, title, base_label, head_label, base_sha, head_sha, diff_base, pr) -> Review:
+    def _create(
+        self, kind, title, base_label, head_label, base_sha, head_sha, diff_base, pr, uncommitted=False
+    ) -> Review:
         review_id = f"{diff_base[:12]}-{head_sha[:12]}"
         with self._lock:
             existing = self.reviews.get(review_id)
@@ -228,7 +269,9 @@ class ReviewManager:
             files=files,
             job=self._index_job(head_sha),
             pr=pr,
-            commits=self.repo.commit_count(diff_base, head_sha),
+            # the snapshot commit isn't one of the branch's commits
+            commits=self.repo.commit_count(diff_base, head_sha) - (1 if uncommitted else 0),
+            uncommitted=uncommitted,
             _base_blobs=base_blobs,
         )
         with self._lock:

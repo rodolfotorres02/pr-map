@@ -53,7 +53,7 @@ export function App() {
       .catch((err) => setRepoError(err instanceof ApiError ? err.message : "Can't reach the prmap server. Is `prmap` running?"));
   }, []);
 
-  // Restore a review from the URL (?review=, ?pr=, ?base=&head=).
+  // Restore a review from the URL (?review=, ?pr=, ?base=&head=[&uncommitted=1][&untracked=1]).
   useEffect(() => {
     if (!repo) return;
     const params = readUrl();
@@ -68,7 +68,13 @@ export function App() {
       void open({ source: "pr", pr: params.get("pr")! }, `Fetching PR ${params.get("pr")}`);
     } else if (params.get("base") && params.get("head")) {
       void open(
-        { source: "branches", base: params.get("base")!, head: params.get("head")! },
+        {
+          source: "branches",
+          base: params.get("base")!,
+          head: params.get("head")!,
+          uncommitted: params.get("uncommitted") === "1",
+          untracked: params.get("untracked") === "1",
+        },
         `Comparing ${params.get("head")}`,
       );
     }

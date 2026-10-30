@@ -1,14 +1,18 @@
 """Read-only access to a local git repository.
 
 Everything here reads from the object database (commits, trees, blobs), so the
-user's working tree and index are never touched. The only write operation is
-`fetch_ref`, which stores fetched PR commits under ``refs/prmap/``.
+user's working tree and index are never touched. The only writes are
+`fetch_ref`, which stores fetched PR commits under ``refs/prmap/``, and
+`snapshot_worktree`, which adds unreferenced objects (pruned by ``git gc``).
 """
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -42,6 +46,17 @@ class FileHunks:
 
 
 _NULL_SHA = "0" * 40
+
+# Fixed identity and date for snapshot commits: the same working tree on the same HEAD
+# always gives the same commit, so reopening an unchanged snapshot reuses its review.
+_SNAPSHOT_ENV = {
+    "GIT_AUTHOR_NAME": "prmap",
+    "GIT_AUTHOR_EMAIL": "prmap@localhost",
+    "GIT_AUTHOR_DATE": "2000-01-01T00:00:00+0000",
+    "GIT_COMMITTER_NAME": "prmap",
+    "GIT_COMMITTER_EMAIL": "prmap@localhost",
+    "GIT_COMMITTER_DATE": "2000-01-01T00:00:00+0000",
+}
 
 # Options shared by every diff we run, so rename pairing is identical across calls and
 # immune to user config (external diff drivers, textconv, colour, custom prefixes).
@@ -197,17 +212,20 @@ class GitRepo:
 
     # -- plumbing ---------------------------------------------------------
 
-    def run(self, *args: str, input: bytes | None = None, check: bool = True) -> bytes:
+    def run(
+        self, *args: str, input: bytes | None = None, check: bool = True, env: dict[str, str] | None = None
+    ) -> bytes:
         proc = subprocess.run(
-            ["git", *args], cwd=self.root, input=input, capture_output=True
+            ["git", *args], cwd=self.root, input=input, capture_output=True,
+            env={**os.environ, **env} if env else None,
         )
         if check and proc.returncode != 0:
             msg = proc.stderr.decode(errors="replace").strip()
             raise GitError(f"git {' '.join(args)} failed: {msg}")
         return proc.stdout
 
-    def text(self, *args: str) -> str:
-        return self.run(*args).decode(errors="replace")
+    def text(self, *args: str, env: dict[str, str] | None = None) -> str:
+        return self.run(*args, env=env).decode(errors="replace")
 
     # -- refs ---------------------------------------------------------------
 
@@ -280,6 +298,40 @@ class GitRepo:
         out = self.text("show", "-s", "--format=%H%x00%an%x00%aI%x00%s", sha)
         full, author, date, subject = out.strip().split("\0", 3)
         return {"sha": full, "author": author, "date": date, "subject": subject}
+
+    def uncommitted_counts(self) -> tuple[int, int]:
+        """(tracked files with staged or unstaged changes, untracked files) in the working tree."""
+        # --no-optional-locks: don't let `status` refresh (write) the user's index
+        out = self.run("--no-optional-locks", "status", "--porcelain", "--untracked-files=all", check=False)
+        lines = out.splitlines()
+        untracked = sum(1 for line in lines if line.startswith(b"??"))
+        return len(lines) - untracked, untracked
+
+    def snapshot_worktree(self, untracked: bool = False) -> str:
+        """Commit the working tree as it is on disk (staged and unstaged changes to tracked
+        files, plus untracked files when asked) on top of HEAD, and return the commit's SHA.
+
+        Works on a copy of the index, so the user's index, checkout and refs are untouched;
+        the new blobs, tree and commit are unreferenced objects. Returns HEAD itself when
+        nothing is uncommitted.
+        """
+        head = self.rev_parse("HEAD")
+        with tempfile.TemporaryDirectory(prefix="prmap-") as tmp:
+            env = {"GIT_INDEX_FILE": str(Path(tmp) / "index")}
+            index = self.root / self.text("rev-parse", "--git-path", "index").strip()
+            if index.is_file():
+                # The copy keeps stat data, so `add` only re-hashes files that changed.
+                shutil.copyfile(index, env["GIT_INDEX_FILE"])
+            else:
+                self.run("read-tree", head, env=env)
+            self.run("add", "--all" if untracked else "--update", env=env)
+            tree = self.text("write-tree", env=env).strip()
+        if tree == self.text("rev-parse", f"{head}^{{tree}}").strip():
+            return head
+        return self.text(
+            "commit-tree", "--no-gpg-sign", "-p", head, "-m", "Uncommitted changes (prmap snapshot)", tree,
+            env=_SNAPSHOT_ENV,
+        ).strip()
 
     def commit_count(self, base: str, head: str) -> int:
         return int(self.text("rev-list", "--count", f"{base}..{head}").strip() or 0)

@@ -39,6 +39,7 @@ export function TopBar({ repo, review, status, view, onView, onClose, onSearch, 
           <code>{review.head_label}</code> into <code>{review.base_label}</code>
           <span className="sep" />
           {review.commits} commit{review.commits === 1 ? "" : "s"}
+          {review.uncommitted && " + uncommitted changes"}
           <span className="sep" />
           <span className="add">+{review.stats.additions}</span> <span className="del">−{review.stats.deletions}</span>
           <span className="sep" />

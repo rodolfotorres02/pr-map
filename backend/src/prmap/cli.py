@@ -31,6 +31,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--pr", help="open this GitHub PR number or URL right away")
     parser.add_argument("--base", help="base branch/commit to compare against")
     parser.add_argument("--head", help="head branch/commit to review (default: current branch)")
+    parser.add_argument(
+        "--uncommitted", action="store_true",
+        help="include uncommitted changes to tracked files (staged and unstaged) on the current branch",
+    )
+    parser.add_argument("--untracked", action="store_true", help="like --uncommitted, plus untracked files")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=7420)
     parser.add_argument("--no-browser", action="store_true", help="don't open a browser tab")
@@ -45,9 +50,13 @@ def main(argv: list[str] | None = None) -> None:
     query: dict[str, str] = {}
     if args.pr:
         query["pr"] = args.pr
-    elif args.base or args.head:
+    elif args.base or args.head or args.uncommitted or args.untracked:
         query["base"] = args.base or repo.default_branch() or "main"
         query["head"] = args.head or repo.current_branch() or "HEAD"
+        if args.uncommitted or args.untracked:
+            query["uncommitted"] = "1"
+        if args.untracked:
+            query["untracked"] = "1"
     url = f"http://{args.host}:{port}/" + (f"?{urlencode(query)}" if query else "")
 
     if not STATIC_DIR.exists():
