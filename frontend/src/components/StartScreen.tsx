@@ -30,6 +30,12 @@ export function StartScreen({ repo, onOpen, opening, error, theme }: Props) {
   const [base, setBase] = useState(defaultBase);
   const [head, setHead] = useState(defaultHead);
   const [onlyHead, setOnlyHead] = useState(true);
+  const [withUncommitted, setWithUncommitted] = useState(false);
+  const [withUntracked, setWithUntracked] = useState(false);
+  // Uncommitted changes live in the working tree, so they only belong to the checked-out branch.
+  const canIncludeUncommitted = head === repo.current_branch || head === "HEAD";
+  const uncommitted = canIncludeUncommitted && withUncommitted;
+  const untracked = uncommitted && withUntracked && repo.uncommitted.untracked > 0;
   const recent = useMemo(() => storage.recent(repo.root).slice(0, 6), [repo.root]);
 
   useEffect(() => {
@@ -148,8 +154,8 @@ export function StartScreen({ repo, onOpen, opening, error, theme }: Props) {
               onSubmit={(e) => {
                 e.preventDefault();
                 onOpen(
-                  { source: "branches", base, head, mode: onlyHead ? "merge-base" : "direct" },
-                  `Comparing ${head} with ${base}`,
+                  { source: "branches", base, head, mode: onlyHead ? "merge-base" : "direct", uncommitted, untracked },
+                  `Comparing ${head}${uncommitted ? " (plus uncommitted changes)" : ""} with ${base}`,
                 );
               }}
             >
@@ -170,7 +176,28 @@ export function StartScreen({ repo, onOpen, opening, error, theme }: Props) {
                   </span>
                 </span>
               </label>
-              <button className="btn btn-primary" disabled={busy || !base || !head || base === head}>
+              {canIncludeUncommitted && (
+                <label className="check">
+                  <input type="checkbox" checked={withUncommitted} onChange={(e) => setWithUncommitted(e.target.checked)} />
+                  <span>
+                    Include uncommitted changes
+                    <span className="muted small block">
+                      {repo.uncommitted.tracked > 0
+                        ? `${repo.uncommitted.tracked} staged or modified file${repo.uncommitted.tracked === 1 ? "" : "s"} in your working tree.`
+                        : "Staged and modified files in your working tree."}
+                    </span>
+                  </span>
+                </label>
+              )}
+              {uncommitted && repo.uncommitted.untracked > 0 && (
+                <label className="check check-nested">
+                  <input type="checkbox" checked={withUntracked} onChange={(e) => setWithUntracked(e.target.checked)} />
+                  <span>
+                    Also include {repo.uncommitted.untracked} untracked file{repo.uncommitted.untracked === 1 ? "" : "s"}
+                  </span>
+                </label>
+              )}
+              <button className="btn btn-primary" disabled={busy || !base || !head || (base === head && !uncommitted)}>
                 Compare branches
               </button>
             </form>

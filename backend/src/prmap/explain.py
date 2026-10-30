@@ -108,6 +108,8 @@ def build_prompt(manager: ReviewManager, review: Review, symbol_id: str) -> str:
 
     parts: list[str] = [f"Pull request: {review.title}"]
     parts.append(f"Comparing `{review.head_label}` into `{review.base_label}`.")
+    if review.uncommitted:
+        parts.append("The head includes the author's uncommitted work in progress.")
     if review.pr and review.pr.get("body"):
         parts.append("PR description:\n" + review.pr["body"].strip()[:3000])
 

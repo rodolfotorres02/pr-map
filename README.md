@@ -98,6 +98,7 @@ cd ~/code/your-project
 prmap                  # pick a PR or two branches in the browser
 prmap --pr 1234        # open a GitHub pull request directly
 prmap --base main      # review the current branch against main
+prmap --base main --uncommitted   # ...including work you haven't committed yet
 ```
 
 prmap opens `http://127.0.0.1:7420` in your browser. Opening pull requests needs the GitHub CLI to be logged in (`gh auth login`). Comparing branches works without it.
@@ -272,7 +273,7 @@ If `claude` isn't installed, the buttons are hidden. If it isn't logged in, the 
 ## Command line
 
 ```text
-prmap [--repo PATH] [--pr NUMBER|URL] [--base REF] [--head REF]
+prmap [--repo PATH] [--pr NUMBER|URL] [--base REF] [--head REF] [--uncommitted] [--untracked]
       [--host HOST] [--port PORT] [--no-browser]
 ```
 
@@ -282,6 +283,8 @@ prmap [--repo PATH] [--pr NUMBER|URL] [--base REF] [--head REF]
 | `--pr` | | Open this GitHub pull request (number or URL) right away. |
 | `--base` | default branch | Base branch, tag or commit to compare against. |
 | `--head` | current branch | Branch, tag or commit to review. |
+| `--uncommitted` | off | Include uncommitted changes to tracked files, staged or not. Only for the checked-out branch. |
+| `--untracked` | off | Like `--uncommitted`, plus untracked files (ignored files are always left out). |
 | `--host` | `127.0.0.1` | Interface to bind. |
 | `--port` | `7420` | Port. On localhost, the next free port is used if it is taken. |
 | `--no-browser` | off | Don't open a browser tab. |
@@ -338,7 +341,7 @@ flowchart LR
     I --> X
 ```
 
-1. **Read git, never the working tree.** The diff, file contents and file lists come from git's object database. Your checkout, index and stash are never touched. For pull requests, prmap fetches the PR head and base into `refs/prmap/pr/<n>/…`, which is the only thing it writes.
+1. **Read git, never the working tree.** The diff, file contents and file lists come from git's object database. Your checkout, index and stash are never touched. For pull requests, prmap fetches the PR head and base into `refs/prmap/pr/<n>/…`. When you include uncommitted changes, prmap snapshots the working tree into a commit that no ref points to, using a temporary copy of the index; `git gc` prunes it later. Those are the only things it writes.
 2. **Parse.** Every Python and JS/TS file at the head commit is parsed with tree-sitter into symbols, call sites, references, imports, exports and simple type hints. Results are cached in SQLite by blob SHA, so unchanged files are never parsed twice, even across branches. Parsing runs in parallel on large repositories.
 3. **Resolve.** Call sites are linked to definitions through:
    - relative and absolute imports, package `__init__` re-exports and star imports,

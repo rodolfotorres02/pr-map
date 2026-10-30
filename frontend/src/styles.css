@@ -158,6 +158,7 @@ h1, h2, h3 { margin: 0; }
 .check { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
 .check input { margin: 2px 0 0; accent-color: var(--ink); }
 .check-small { align-items: center; font-size: 12px; gap: 6px; white-space: nowrap; }
+.check-nested { margin-left: 24px; }
 .check-small input { margin: 0; }
 
 .segmented { display: inline-flex; padding: 2px; border-radius: var(--radius); background: var(--panel-2); }

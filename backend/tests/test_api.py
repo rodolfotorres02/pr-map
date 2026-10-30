@@ -45,3 +45,29 @@ def test_api_round_trip(fixture_repo, tmp_path, monkeypatch):
 
     bad = client.post("/api/reviews", json={"source": "branches", "base": "nope", "head": "feature"})
     assert bad.status_code == 400
+
+
+def test_empty_comparisons_explain_themselves(fixture_repo, tmp_path, monkeypatch):
+    monkeypatch.setenv("PRMAP_CACHE_DIR", str(tmp_path))
+    client = TestClient(create_app(fixture_repo))
+
+    same = client.post("/api/reviews", json={"source": "branches", "base": "feature", "head": "feature"})
+    assert same.status_code == 400
+    assert "point to the same commit" in same.json()["detail"]
+    assert "uncommitted" not in same.json()["detail"]
+
+    behind = client.post("/api/reviews", json={"source": "branches", "base": "feature", "head": "main"})
+    assert behind.status_code == 400
+    assert "already in 'feature'" in behind.json()["detail"]
+
+    assert client.get("/api/repo").json()["uncommitted"] == {"tracked": 0, "untracked": 0}
+    clean = client.post(
+        "/api/reviews", json={"source": "branches", "base": "feature", "head": "feature", "uncommitted": True}
+    )
+    assert clean.status_code == 400
+    assert "no uncommitted changes either" in clean.json()["detail"]
+    elsewhere = client.post(
+        "/api/reviews", json={"source": "branches", "base": "feature", "head": "main", "uncommitted": True}
+    )
+    assert elsewhere.status_code == 400
+    assert "checked out" in elsewhere.json()["detail"]

@@ -11,7 +11,7 @@ from conftest import _git, _write
 from prmap.analysis import MODULE
 from prmap.gitrepo import GitRepo, parse_zero_context_diff
 from prmap.indexer import ParseCache
-from prmap.review import ReviewManager, _count_innermost, _innermost
+from prmap.review import ReviewError, ReviewManager, _count_innermost, _innermost
 
 ODD = 'web/odd [id] "q" é.ts'
 
@@ -178,3 +178,56 @@ def test_zero_context_parser_ignores_header_lookalikes_in_bodies():
     hunks = parse_zero_context_diff(out)
     assert hunks['x "y".py'].deleted == [(3, 1)] and hunks['x "y".py'].added == [(3, 2)]
     assert hunks["sp ace.py"].deleted == [] and hunks["sp ace.py"].added == [(11, 1)]
+
+
+def test_new_branch_with_only_uncommitted_work(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    _write(root, {"app.py": "def f():\n    return 1\n"})
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "base")
+    _git(root, "checkout", "-q", "-b", "feature")
+    _write(root, {"app.py": "def f():\n    return 2\n"})
+
+    manager = ReviewManager(GitRepo(root), cache=ParseCache(tmp_path / "c.sqlite"))
+    with pytest.raises(ReviewError, match="same commit.*uncommitted changes aren't included"):
+        manager.open_branches("main", "feature")
+
+    review = manager.open_branches("main", "feature", uncommitted=True)
+    assert review.uncommitted and review.commits == 0
+    assert review.title == "feature + uncommitted → main" and review.head_label == "feature"
+    assert [(f["path"], f["status"]) for f in review.files] == [("app.py", "modified")]
+    assert manager.open_branches("main", "feature", uncommitted=True) is review
+    assert _git(root, "status", "--porcelain").strip() == "M app.py"
+
+
+def test_snapshot_worktree_leaves_index_and_refs_alone(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "main")
+    _write(root, {"a.py": "a = 1\n", "b.py": "b = 1\n", "gone.py": "x = 1\n", ".gitignore": "*.log\n"})
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "base")
+    repo = GitRepo(root)
+    head = repo.rev_parse("HEAD")
+    assert repo.snapshot_worktree() == head  # nothing uncommitted
+
+    _write(root, {"a.py": "a = 2\n", "b.py": "b = 2\n", "new.py": "n = 1\n", "debug.log": "noise\n"})
+    _git(root, "add", "a.py")  # staged; b.py stays unstaged, new.py untracked, debug.log ignored
+    (root / "gone.py").unlink()
+    status = _git(root, "status", "--porcelain")
+    refs = _git(root, "for-each-ref")
+    index = (root / ".git" / "index").read_bytes()
+    assert repo.uncommitted_counts() == (3, 1)
+
+    snap = repo.snapshot_worktree()
+    assert snap != head and repo.rev_parse(f"{snap}^") == head
+    changed = {c.path: c.status for c in repo.changed_files(head, snap)}
+    assert changed == {"a.py": "modified", "b.py": "modified", "gone.py": "deleted"}
+    assert repo.snapshot_worktree() == snap  # same tree on the same HEAD: same commit
+    with_new = repo.snapshot_worktree(untracked=True)
+    assert {c.path for c in repo.changed_files(head, with_new)} == {"a.py", "b.py", "gone.py", "new.py"}
+    assert (root / ".git" / "index").read_bytes() == index
+    assert _git(root, "for-each-ref") == refs
+    assert _git(root, "status", "--porcelain") == status

@@ -66,7 +66,7 @@ export function FileTree({ files, selected, reviewed, onSelect, onToggleReviewed
   if (!files.length) {
     return (
       <div className="tree-empty">
-        <p>No files match these filters.</p>
+        <p>{totalFiles > 0 ? "No files match these filters." : "No files changed."}</p>
         {totalFiles > 0 && (
           <button className="btn btn-small" onClick={onClearFilter}>
             Show all {totalFiles} files
